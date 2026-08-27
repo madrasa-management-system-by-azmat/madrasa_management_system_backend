@@ -30,8 +30,8 @@ class InternalExamViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
 
         from apps.students.models import Student
         students = Student.objects.filter(madrasa=self.get_madrasa(), status="active", current_class__in=classes).select_related("current_class")
-        subjects = list(exam.subjects.all())
-        if not subjects and exam.subject_id:
+        subjects = list(exam.subjects.filter(academic_class__in=classes))
+        if not subjects and exam.subject_id and exam.subject.academic_class_id in [academic_class.id for academic_class in classes]:
             subjects = [exam.subject]
         results = InternalExamResult.objects.filter(madrasa=self.get_madrasa(), exam=exam, student__in=students, subject__in=subjects).select_related("student", "subject")
         by_student = {}
@@ -45,20 +45,17 @@ class InternalExamViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
             subject_rows = []
             obtained = 0
             is_complete = True
-            is_pass = True
             student_results = by_student.get(student.id, {})
             for subject in subjects:
                 result = student_results.get(subject.id)
                 marks = result.marks if result else None
                 if marks is None:
                     is_complete = False
-                    is_pass = False
                 else:
                     obtained += marks
-                    if marks < subject.passing_marks:
-                        is_pass = False
                 subject_rows.append({"subject": subject.id, "subject_name": subject.name, "total_marks": subject.total_marks, "passing_marks": subject.passing_marks, "marks": marks, "result": result.result if result else "pending"})
-            rows.append({"student": student.id, "student_name": student.full_name, "registration_number": student.registration_number, "class_name": student.current_class.name, "subjects": subject_rows, "obtained_marks": obtained, "total_marks": total_marks, "passing_marks": total_passing_marks, "percentage": round((obtained / total_marks * 100), 2) if total_marks else 0, "result": "pass" if is_complete and is_pass else "fail" if is_complete else "pending"})
+            overall_result = "pending" if not is_complete else "pass" if obtained >= total_passing_marks else "fail"
+            rows.append({"student": student.id, "student_name": student.full_name, "registration_number": student.registration_number, "class_name": student.current_class.name, "subjects": subject_rows, "obtained_marks": obtained, "total_marks": total_marks, "passing_marks": total_passing_marks, "percentage": round((obtained / total_marks * 100), 2) if total_marks else 0, "result": overall_result})
         return Response({"exam": exam.id, "exam_name": exam.name, "exam_date": exam.exam_date, "subjects": [{"id": subject.id, "name": subject.name, "total_marks": subject.total_marks, "passing_marks": subject.passing_marks} for subject in subjects], "students": rows})
 
 
