@@ -1,7 +1,10 @@
 from django.contrib.auth import get_user_model
+from django.http import FileResponse
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, BasePermission
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -11,6 +14,7 @@ from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from .models import Madrasa, MadrasaProfile, UserProfile
 from .serializers import ChangePasswordSerializer, CreateMadrasaSerializer, CreateMadrasaUserSerializer, LoginSerializer, LogoutSerializer, MadrasaProfileSerializer, MadrasaUserSerializer, RegisterSerializer, SuperAdminMadrasaDetailSerializer, UpdateUserSerializer, UserSerializer
 from .tenancy import current_madrasa
+from .backup import create_backup, restore_backup
 
 User = get_user_model()
 
@@ -76,6 +80,36 @@ class MadrasaProfileAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class TenantBackupAPIView(APIView):
+    """Admin-only tenant backup download and destructive restore endpoint."""
+
+    def _tenant_admin(self, request):
+        if request.user.profile.role != UserProfile.Role.ADMIN:
+            return None
+        return current_madrasa(request)
+
+    def get(self, request):
+        tenant = self._tenant_admin(request)
+        if not tenant:
+            return Response({"detail": "Only madrasa admins can create backups."}, status=status.HTTP_403_FORBIDDEN)
+        output = create_backup(tenant)
+        filename = f"{tenant.slug}-backup-{timezone.localdate().isoformat()}.zip"
+        return FileResponse(output, as_attachment=True, filename=filename, content_type="application/zip")
+
+    def post(self, request):
+        tenant = self._tenant_admin(request)
+        if not tenant:
+            return Response({"detail": "Only madrasa admins can restore backups."}, status=status.HTTP_403_FORBIDDEN)
+        archive = request.FILES.get("backup")
+        if not archive:
+            return Response({"backup": ["A backup ZIP file is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = restore_backup(archive, tenant)
+        except ValidationError as error:
+            return Response({"backup": error.detail}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Backup restored successfully.", **result})
 
 
 class MadrasaUserManagementAPIView(APIView):
