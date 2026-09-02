@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth import get_user_model
 from django.http import FileResponse
 from django.utils import timezone
@@ -17,6 +19,7 @@ from .tenancy import current_madrasa
 from .backup import create_backup, restore_backup
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class IsPlatformSuperAdmin(BasePermission):
@@ -109,6 +112,12 @@ class TenantBackupAPIView(APIView):
             result = restore_backup(archive, tenant)
         except ValidationError as error:
             return Response({"backup": error.detail}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Tenant backup restore failed for madrasa %s", tenant.pk)
+            return Response(
+                {"backup": ["The backup could not be restored. Verify the file and try again."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response({"detail": "Backup restored successfully.", **result})
 
 

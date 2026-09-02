@@ -36,6 +36,9 @@ class UserProfile(models.Model):
 class MadrasaProfile(models.Model):
     """Tenant-specific institution profile used throughout the system."""
 
+    DEFAULT_PRIMARY_COLOR = "#226CE0"
+    DEFAULT_SIDEBAR_COLOR = "#172554"
+
     madrasa = models.OneToOneField(Madrasa, on_delete=models.CASCADE, related_name="profile", null=True, blank=True)
     name = models.CharField(max_length=250, blank=True)
     name_english = models.CharField(max_length=250, blank=True)
@@ -53,6 +56,8 @@ class MadrasaProfile(models.Model):
     principal_title = models.CharField(max_length=120, blank=True)
     registration_number = models.CharField(max_length=100, blank=True)
     established_year = models.PositiveIntegerField(blank=True, null=True)
+    primary_color = models.CharField(max_length=7, default=DEFAULT_PRIMARY_COLOR)
+    sidebar_color = models.CharField(max_length=7, default=DEFAULT_SIDEBAR_COLOR)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

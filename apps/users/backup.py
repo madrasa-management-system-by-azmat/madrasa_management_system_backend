@@ -14,41 +14,41 @@ from rest_framework.exceptions import ValidationError
 
 # Order matters for foreign keys; reverse order is used when clearing data.
 MODEL_LABELS = [
-    "students.Department",
-    "students.Halaqa",
-    "hostel.HostelWing",
-    "finance.Fund",
-    "finance.Donor",
-    "users.MadrasaProfile",
-    "students.AcademicClass",
-    "academics.Subject",
-    "staff.Staff",
-    "students.Student",
-    "hostel.HostelRoom",
-    "exams.InternalExam",
-    "exams.InternalExamPaper",
-    "exams.InternalExamResult",
-    "staff.HalaqaAssignment",
-    "staff.StaffAttendance",
-    "students.StudentAttendance",
-    "hifz.HifzDailyLog",
-    "hostel.HostelAllocation",
-    "hostel.GatePass",
-    "exams.WafaqBoardRegistration",
-    "exams.WafaqResult",
-    "finance.Donation",
-    "finance.Expense",
-    "finance.StudentFeeLog",
-    "finance.StudentMonthlyFee",
-    "finance.StudentFeePayment",
-    "finance.TeacherSalary",
-    "finance.StudentSponsorship",
+    "students.department",
+    "students.halaqa",
+    "hostel.hostelwing",
+    "finance.fund",
+    "finance.donor",
+    "users.madrasaprofile",
+    "students.academicclass",
+    "academics.subject",
+    "staff.staff",
+    "students.student",
+    "hostel.hostelroom",
+    "exams.internalexam",
+    "exams.internalexampaper",
+    "exams.internalexamresult",
+    "staff.halaqaassignment",
+    "staff.staffattendance",
+    "students.studentattendance",
+    "hifz.hifzdailylog",
+    "hostel.hostelallocation",
+    "hostel.gatepass",
+    "exams.wafaqboardregistration",
+    "exams.wafaqresult",
+    "finance.donation",
+    "finance.expense",
+    "finance.studentfeelog",
+    "finance.studentmonthlyfee",
+    "finance.studentfeepayment",
+    "finance.teachersalary",
+    "finance.studentsponsorship",
 ]
 
 MEDIA_FIELDS = {
-    "users.MadrasaProfile": ("logo",),
-    "staff.Staff": ("photo",),
-    "students.Student": ("photo",),
+    "users.madrasaprofile": ("logo",),
+    "staff.staff": ("photo",),
+    "students.student": ("photo",),
 }
 
 
@@ -151,8 +151,7 @@ def restore_backup(uploaded_file, tenant):
             if not serialized:
                 continue
             for deserialized in serializers.deserialize("json", json.dumps(serialized, ensure_ascii=False)):
-                deserialized.save()
-                deserialized.save_m2m()
+                deserialized.save(save_m2m=True)
 
         for name, content in media_data.items():
             destination = _safe_media_path(name)

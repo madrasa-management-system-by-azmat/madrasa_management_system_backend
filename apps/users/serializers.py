@@ -1,4 +1,6 @@
 from django.contrib.auth import authenticate, get_user_model
+import re
+
 from rest_framework import serializers
 
 from .models import Madrasa, MadrasaProfile, UserProfile
@@ -7,13 +9,26 @@ User = get_user_model()
 
 
 class MadrasaProfileSerializer(serializers.ModelSerializer):
+    def validate_primary_color(self, value):
+        return self._validate_hex_color(value)
+
+    def validate_sidebar_color(self, value):
+        return self._validate_hex_color(value)
+
+    @staticmethod
+    def _validate_hex_color(value):
+        value = value.strip().upper()
+        if not re.fullmatch(r"#[0-9A-F]{6}", value):
+            raise serializers.ValidationError("Enter a valid hex color, for example #226CE0.")
+        return value
+
     class Meta:
         model = MadrasaProfile
         fields = [
             "id", "name", "name_english", "logo", "address", "city", "province",
             "country", "postal_code", "phone", "alternate_phone", "email", "website",
             "principal_name", "principal_title", "registration_number", "established_year",
-            "updated_at",
+            "primary_color", "sidebar_color", "updated_at",
         ]
         read_only_fields = ["id", "updated_at"]
 
