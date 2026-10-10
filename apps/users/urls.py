@@ -1,4 +1,5 @@
 from django.urls import path
+from rest_framework.routers import DefaultRouter
 
 from .views import (
     ChangePasswordAPIView,
@@ -13,6 +14,8 @@ from .views import (
     RegisterAPIView,
     SuperAdminMadrasaAPIView,
     SuperAdminMadrasaDetailAPIView,
+    PermissionCatalogueAPIView,
+    TenantRoleViewSet,
 )
 
 
@@ -30,4 +33,9 @@ urlpatterns = [
     path("madrasas/<int:madrasa_id>/", SuperAdminMadrasaDetailAPIView.as_view(), name="super-admin-madrasa-detail"),
     path("logout/", LogoutAPIView.as_view(), name="auth-logout"),
     path("change-password/", ChangePasswordAPIView.as_view(), name="auth-change-password"),
+    path("permissions/", PermissionCatalogueAPIView.as_view(), name="permission-catalogue"),
 ]
+
+router = DefaultRouter()
+router.register("roles", TenantRoleViewSet, basename="tenant-role")
+urlpatterns += router.urls

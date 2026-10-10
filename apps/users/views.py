@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.http import FileResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
-from rest_framework import status
+from rest_framework import status, viewsets
 from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -13,10 +13,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 
-from .models import Madrasa, MadrasaProfile, UserProfile
-from .serializers import ChangePasswordSerializer, CreateMadrasaSerializer, CreateMadrasaUserSerializer, LoginSerializer, LogoutSerializer, MadrasaProfileSerializer, MadrasaUserSerializer, RegisterSerializer, SuperAdminMadrasaDetailSerializer, UpdateUserSerializer, UserSerializer
+from .models import Madrasa, MadrasaProfile, PermissionDefinition, TenantRole, UserProfile, UserRoleAssignment
+from .serializers import ChangePasswordSerializer, CreateMadrasaSerializer, CreateMadrasaUserSerializer, LoginSerializer, LogoutSerializer, MadrasaProfileSerializer, MadrasaUserSerializer, PermissionDefinitionSerializer, RegisterSerializer, SuperAdminMadrasaDetailSerializer, TenantRoleSerializer, UpdateUserSerializer, UserSerializer
 from .tenancy import current_madrasa
 from .backup import create_backup, restore_backup
+from apps.auditlog.services import audit_event
+from .permissions import HasPermissionCode
+from .rbac import ensure_tenant_system_roles, sync_legacy_assignment, user_has_permission
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -50,8 +53,15 @@ class LoginAPIView(APIView):
     @extend_schema(tags=["Authentication"], request=LoginSerializer, responses={200: UserSerializer})
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            audit_event(category="auth", action="login_failed", metadata={"identifier": request.data.get("identifier", "")})
+            raise ValidationError(serializer.errors)
         user = serializer.validated_data["user"]
+        profile = getattr(user, "profile", None)
+        if not user.is_superuser and (not profile or not profile.madrasa_id or not profile.madrasa.is_active):
+            audit_event(category="auth", action="login_denied", actor=user, madrasa=getattr(profile, "madrasa", None), metadata={"reason": "inactive_membership"})
+            return Response({"detail": "This madrasa account is inactive."}, status=status.HTTP_403_FORBIDDEN)
+        audit_event(category="auth", action="login_success", actor=user, madrasa=getattr(profile, "madrasa", None))
         return Response(jwt_response(user))
 
 
@@ -69,6 +79,12 @@ class MeAPIView(APIView):
 
 
 class MadrasaProfileAPIView(APIView):
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        required = "settings.view" if request.method == "GET" else "settings.manage"
+        if not user_has_permission(request.user, required):
+            self.permission_denied(request, message="You do not have permission to access madrasa settings.")
+
     @extend_schema(tags=["Settings"], responses=MadrasaProfileSerializer)
     def get(self, request):
         profile, _ = MadrasaProfile.objects.get_or_create(madrasa=current_madrasa(request), defaults={"name": current_madrasa(request).name})
@@ -89,15 +105,16 @@ class TenantBackupAPIView(APIView):
     """Admin-only tenant backup download and destructive restore endpoint."""
 
     def _tenant_admin(self, request):
-        if request.user.profile.role != UserProfile.Role.ADMIN:
-            return None
         return current_madrasa(request)
 
     def get(self, request):
         tenant = self._tenant_admin(request)
         if not tenant:
             return Response({"detail": "Only madrasa admins can create backups."}, status=status.HTTP_403_FORBIDDEN)
+        if not user_has_permission(request.user, "settings.backup"):
+            return Response({"detail": "You do not have backup permission."}, status=status.HTTP_403_FORBIDDEN)
         output = create_backup(tenant)
+        audit_event(category="backup", action="backup_download", madrasa=tenant, actor=request.user)
         filename = f"{tenant.slug}-backup-{timezone.localdate().isoformat()}.zip"
         return FileResponse(output, as_attachment=True, filename=filename, content_type="application/zip")
 
@@ -105,23 +122,35 @@ class TenantBackupAPIView(APIView):
         tenant = self._tenant_admin(request)
         if not tenant:
             return Response({"detail": "Only madrasa admins can restore backups."}, status=status.HTTP_403_FORBIDDEN)
+        if not user_has_permission(request.user, "settings.restore"):
+            return Response({"detail": "You do not have restore permission."}, status=status.HTTP_403_FORBIDDEN)
         archive = request.FILES.get("backup")
         if not archive:
             return Response({"backup": ["A backup ZIP file is required."]}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            audit_event(category="restore", action="restore_started", madrasa=tenant, actor=request.user, metadata={"filename": archive.name})
             result = restore_backup(archive, tenant)
         except ValidationError as error:
+            audit_event(category="restore", action="restore_failed", madrasa=tenant, actor=request.user, metadata={"filename": archive.name, "reason": str(error.detail)})
             return Response({"backup": error.detail}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
             logger.exception("Tenant backup restore failed for madrasa %s", tenant.pk)
+            audit_event(category="restore", action="restore_failed", madrasa=tenant, actor=request.user, metadata={"filename": archive.name, "reason": "unexpected_error"})
             return Response(
                 {"backup": ["The backup could not be restored. Verify the file and try again."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        audit_event(category="restore", action="restore_succeeded", madrasa=tenant, actor=request.user, metadata=result)
         return Response({"detail": "Backup restored successfully.", **result})
 
 
 class MadrasaUserManagementAPIView(APIView):
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        code = "users.view" if request.method == "GET" else "users.manage"
+        if not user_has_permission(request.user, code):
+            self.permission_denied(request, message="You do not have permission to manage users.")
+
     def get(self, request):
         tenant = current_madrasa(request)
         if request.user.profile.role != UserProfile.Role.ADMIN:
@@ -159,7 +188,43 @@ class MadrasaUserManagementAPIView(APIView):
                 return Response({"role": ["Invalid role."]}, status=status.HTTP_400_BAD_REQUEST)
             user.profile.role = request.data["role"]
             user.profile.save(update_fields=["role"])
+            sync_legacy_assignment(user.profile, assigned_by=request.user)
+        if "role_ids" in request.data and user != request.user:
+            role_ids = request.data.get("role_ids") or []
+            roles = list(TenantRole.objects.filter(madrasa=tenant, pk__in=role_ids, is_active=True))
+            if len(roles) != len(set(role_ids)):
+                return Response({"role_ids": ["One or more roles are invalid."]}, status=status.HTTP_400_BAD_REQUEST)
+            UserRoleAssignment.objects.filter(madrasa=tenant, user=user).update(is_active=False, revoked_by=request.user, revoked_at=timezone.now())
+            for role in roles:
+                UserRoleAssignment.objects.update_or_create(madrasa=tenant, user=user, role=role, defaults={"is_active": True, "assigned_by": request.user, "revoked_by": None, "revoked_at": None, "expires_at": None})
+        audit_event(category="security", action="user_permissions_updated", madrasa=tenant, actor=request.user, entity_type="auth.user", entity_id=str(user.pk), entity_label=user.username, metadata={"role_ids": request.data.get("role_ids"), "legacy_role": request.data.get("role")})
         return Response(UserSerializer(user).data)
+
+
+class PermissionCatalogueAPIView(APIView):
+    permission_classes = [HasPermissionCode]
+    required_permission = "roles.view"
+
+    def get(self, request):
+        return Response(PermissionDefinitionSerializer(PermissionDefinition.objects.filter(is_active=True), many=True).data)
+
+
+class TenantRoleViewSet(viewsets.ModelViewSet):
+    serializer_class = TenantRoleSerializer
+    permission_classes = [HasPermissionCode]
+    action_permissions = {"list": "roles.view", "retrieve": "roles.view", "create": "roles.manage", "update": "roles.manage", "partial_update": "roles.manage", "destroy": "roles.manage"}
+
+    def get_queryset(self):
+        tenant = current_madrasa(self.request)
+        ensure_tenant_system_roles(tenant)
+        return TenantRole.objects.filter(madrasa=tenant).prefetch_related("permissions")
+
+    def perform_destroy(self, instance):
+        if instance.is_system:
+            raise ValidationError("System roles cannot be deleted.")
+        if instance.user_assignments.filter(is_active=True).exists():
+            raise ValidationError("Remove this role from all users before deleting it.")
+        instance.delete()
 
 
 class SuperAdminMadrasaAPIView(APIView):
@@ -211,6 +276,7 @@ class LogoutAPIView(APIView):
             RefreshToken(serializer.validated_data["refresh"]).blacklist()
         except Exception:
             return Response({"detail": "Refresh token is invalid or expired."}, status=status.HTTP_400_BAD_REQUEST)
+        audit_event(category="auth", action="logout", actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -223,6 +289,7 @@ class ChangePasswordAPIView(APIView):
         request.user.save()
         for token in OutstandingToken.objects.filter(user=request.user):
             BlacklistedToken.objects.get_or_create(token=token)
+        audit_event(category="security", action="password_changed", actor=request.user)
         return Response({"detail": "Password changed. Please log in again."})
 
 

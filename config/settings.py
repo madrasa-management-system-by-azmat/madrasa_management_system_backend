@@ -29,6 +29,20 @@ INSTALLED_APPS = [
     "apps.hostel",
     "apps.exams",
     "apps.finance",
+    "apps.library",
+    "apps.fatwas",
+    "apps.meetings",
+    "apps.tasks",
+    "apps.documents",
+    "apps.guardians",
+    "apps.leaves",
+    "apps.development",
+    "apps.certificates",
+    "apps.operations",
+    "apps.auditlog",
+    "apps.backups",
+    "apps.search",
+    "apps.reports",
 ]
 
 MIDDLEWARE = [
@@ -38,6 +52,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.auditlog.middleware.AuditContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -85,13 +100,14 @@ USE_TZ = True
 STATIC_URL = "static/"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+BACKUP_ROOT = Path(os.getenv("MADRASA_BACKUP_ROOT", BASE_DIR / "private" / "backups"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.auditlog.authentication.AuditJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
@@ -114,6 +130,17 @@ SPECTACULAR_SETTINGS = {
         {"name": "Hostel", "description": "Wings, rooms, allocations, and gate passes."},
         {"name": "Exams", "description": "Internal exams, Wafaq registration, and results."},
         {"name": "Finance", "description": "Funds, donors, fees, sponsorships, and expenses."},
+        {"name": "Library", "description": "Catalog, copies, members, circulation, reservations, and fines."},
+        {"name": "Fatwas", "description": "Dar al-Ifta inquiries, research, review, approval, and publication."},
+        {"name": "Meetings", "description": "Meeting schedules, participants, minutes, decisions, and action tracking."},
+        {"name": "Administrative Tasks", "description": "Projects, assignments, checklists, recurring work, review, and completion tracking."},
+        {"name": "Documents", "description": "Secure document repository, versions, access grants, approval, and retention."},
+        {"name": "Parent Portal", "description": "Guardian accounts, linked students, parent dashboards, announcements, and parent-teacher meetings."},
+        {"name": "Leave Management", "description": "Staff and student leave requests, policies, balances, approval, substitutions, and attendance integration."},
+        {"name": "Student Development", "description": "Discipline, training, rewards, and alumni engagement."},
+        {"name": "Certificate Verification", "description": "Issued credentials, signatures, revocation, reissue, and public verification."},
+        {"name": "Operations", "description": "Store, inventory, procurement, assets, transport, and kitchen operations."},
+        {"name": "Audit and Archiving", "description": "Tamper-evident audit events, archive batches, retention policies, and legal holds."},
     ],
     "SECURITY": [{"jwtAuth": []}],
 }

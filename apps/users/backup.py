@@ -19,18 +19,145 @@ MODEL_LABELS = [
     "hostel.hostelwing",
     "finance.fund",
     "finance.donor",
+    "finance.financialcategory",
+    "library.librarycategory",
+    "library.libraryshelf",
+    "fatwas.fatwacategory",
+    "fatwas.fatwatag",
+    "fatwas.fatwanumbersequence",
+    "meetings.meetingtype",
+    "meetings.meetingnumbersequence",
+    "tasks.taskcategory",
+    "tasks.tasknumbersequence",
+    "documents.documentcategory",
+    "documents.documentfolder",
+    "documents.documentnumbersequence",
+    "guardians.guardianprofile",
+    "leaves.institutioncalendarday",
+    "leaves.leavetype",
+    "leaves.leavepolicy",
+    "leaves.leavepolicyrule",
+    "development.disciplinecategory",
+    "development.rewardcategory",
+    "certificates.certificatenumbersequence",
+    "operations.operationslocation",
+    "operations.itemcategory",
+    "operations.vendor",
     "users.madrasaprofile",
     "students.academicclass",
+    "students.academicyear",
     "academics.subject",
+    "academics.classoffering",
+    "academics.curriculumplan",
+    "academics.curriculumbook",
+    "academics.curriculumunit",
+    "academics.timetableperiod",
+    "academics.timetableentry",
+    "academics.dailylesson",
+    "academics.lessonstudentattention",
     "staff.staff",
+    "staff.teachingassignment",
+    "staff.syllabusplan",
+    "staff.syllabusprogressentry",
+    "staff.staffcontribution",
+    "staff.performancereview",
+    "staff.performancegoal",
     "students.student",
+    "library.librarybook",
+    "library.librarybookcopy",
+    "library.librarymember",
+    "fatwas.fatwainquiry",
+    "fatwas.fatwarequester",
+    "fatwas.fatwarevision",
+    "fatwas.fatwareference",
+    "fatwas.fatwaattachment",
+    "fatwas.fatwaworkflowevent",
+    "fatwas.fatwapublication",
+    "meetings.meeting",
+    "meetings.meetingagendaitem",
+    "meetings.meetingparticipant",
+    "meetings.meetingminutesrevision",
+    "meetings.meetingdecision",
+    "meetings.meetingactionitem",
+    "meetings.meetingattachment",
+    "meetings.meetingauditevent",
+    "tasks.taskproject",
+    "tasks.administrativetask",
+    "tasks.taskassignment",
+    "tasks.taskchecklistitem",
+    "tasks.taskdependency",
+    "tasks.taskcomment",
+    "tasks.taskattachment",
+    "tasks.taskrecurrence",
+    "tasks.taskauditevent",
+    "documents.document",
+    "documents.documentversion",
+    "documents.documentaccessgrant",
+    "documents.documentlink",
+    "documents.documentcomment",
+    "documents.documentacknowledgement",
+    "documents.documentauditevent",
+    "guardians.guardianstudentlink",
+    "guardians.guardianinvitation",
+    "guardians.guardianconsent",
+    "guardians.guardiannotificationpreference",
+    "guardians.parentmeetingslot",
+    "guardians.parentmeetingbooking",
+    "guardians.guardianannouncement",
+    "guardians.guardianannouncementread",
+    "leaves.leavebalance",
+    "leaves.leaverequest",
+    "leaves.leaverequestday",
+    "leaves.leavesubstitution",
+    "leaves.leaveattachment",
+    "leaves.leaveauditevent",
+    "development.disciplineincident",
+    "development.disciplineaction",
+    "development.disciplineappeal",
+    "development.trainingprogram",
+    "development.trainingenrollment",
+    "development.rewardnomination",
+    "development.alumniengagement",
+    "certificates.certificate",
+    "certificates.certificateevent",
+    "certificates.certificateverificationlog",
+    "operations.inventoryitem",
+    "operations.stocklot",
+    "operations.stocktransaction",
+    "operations.purchaseorder",
+    "operations.purchaseorderline",
+    "operations.asset",
+    "operations.assetmaintenance",
+    "operations.vehicle",
+    "operations.transportroute",
+    "operations.routestop",
+    "operations.studenttransportassignment",
+    "operations.vehiclelog",
+    "operations.mealplan",
+    "operations.mealingredient",
+    "students.admissionapplication",
+    "students.admissioninterview",
+    "students.admissiontest",
+    "students.admissiondecision",
+    "students.studentenrollment",
+    "students.rollnumberchange",
+    "students.studentlifecycleevent",
+    "students.promotiondecision",
+    "students.graduationrecord",
+    "students.alumniprofile",
     "hostel.hostelroom",
     "exams.internalexam",
     "exams.internalexampaper",
     "exams.internalexamresult",
+    "exams.examduty",
+    "exams.examattendance",
+    "exams.examresultchange",
+    "exams.annualresult",
     "staff.halaqaassignment",
     "staff.staffattendance",
     "students.studentattendance",
+    "students.attendancealertrule",
+    "students.attendancealert",
     "hifz.hifzdailylog",
     "hostel.hostelallocation",
     "hostel.gatepass",
@@ -43,12 +170,26 @@ MODEL_LABELS = [
     "finance.studentfeepayment",
     "finance.teachersalary",
     "finance.studentsponsorship",
+    "finance.fundtransfer",
+    "finance.budget",
+    "finance.budgetline",
+    "finance.staffcompensation",
+    "finance.payrollrun",
+    "finance.payrollitem",
+    "library.libraryloan",
+    "library.libraryfine",
+    "library.libraryreservation",
 ]
 
 MEDIA_FIELDS = {
     "users.madrasaprofile": ("logo",),
     "staff.staff": ("photo",),
     "students.student": ("photo",),
+    "fatwas.fatwaattachment": ("file",),
+    "meetings.meetingattachment": ("file",),
+    "tasks.taskattachment": ("file",),
+    "documents.documentversion": ("file",),
+    "leaves.leaveattachment": ("file",),
 }
 
 
@@ -59,7 +200,16 @@ def _model(label):
 
 
 def _tenant_queryset(model, tenant):
-    return model.objects.filter(madrasa=tenant)
+    field_names = {field.name for field in model._meta.concrete_fields}
+    if "madrasa" in field_names:
+        return model.objects.filter(madrasa=tenant)
+    tenant_paths = {
+        "staff.performancemetric": "review__madrasa",
+    }
+    lookup = tenant_paths.get(model._meta.label_lower)
+    if lookup:
+        return model.objects.filter(**{lookup: tenant})
+    raise ValidationError(f"Backup model {model._meta.label_lower} has no tenant ownership path.")
 
 
 def _safe_media_path(name):
@@ -70,7 +220,7 @@ def _safe_media_path(name):
     return destination
 
 
-def create_backup(tenant):
+def create_backup(tenant, include_media=True):
     """Return a BytesIO ZIP containing a portable tenant-only snapshot."""
     records = []
     media_names = set()
@@ -79,7 +229,7 @@ def create_backup(tenant):
         model = _model(label)
         queryset = _tenant_queryset(model, tenant)
         records.extend(json.loads(serializers.serialize("json", queryset)))
-        for field_name in MEDIA_FIELDS.get(label, ()):
+        for field_name in MEDIA_FIELDS.get(label, ()) if include_media else ():
             for instance in queryset.exclude(**{field_name: ""}).exclude(**{f"{field_name}__isnull": True}):
                 name = getattr(instance, field_name).name
                 if name:
