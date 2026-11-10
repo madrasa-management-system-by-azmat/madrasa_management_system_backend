@@ -1,0 +1,2 @@
+# Taqreeb (Events & Duties) App
+

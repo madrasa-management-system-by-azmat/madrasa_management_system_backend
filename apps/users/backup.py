@@ -156,6 +156,7 @@ MODEL_LABELS = [
     "staff.halaqaassignment",
     "staff.staffattendance",
     "students.studentattendance",
+    "students.studentattendancescan",
     "students.attendancealertrule",
     "students.attendancealert",
     "hifz.hifzdailylog",

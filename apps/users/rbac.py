@@ -44,6 +44,8 @@ PERMISSION_CATALOG = {
     "certificates.manage": ("certificates", "manage", "اسناد جاری و منسوخ کریں", True),
     "operations.view": ("operations", "view", "عملی انتظام دیکھیں", False),
     "operations.manage": ("operations", "manage", "عملی ریکارڈ کا انتظام", True),
+    "taqreeb.view": ("taqreeb", "view", "تقریبات دیکھیں", False),
+    "taqreeb.manage": ("taqreeb", "manage", "تقریبات اور ڈیوٹیز کا انتظام", False),
     "users.view": ("users", "view", "صارفین دیکھیں", True),
     "users.manage": ("users", "manage", "صارفین کا انتظام", True),
     "roles.view": ("roles", "view", "کردار اور اجازتیں دیکھیں", True),
@@ -64,6 +66,7 @@ MODULE_APP_MAP = {
     "meetings": "meetings", "tasks": "tasks", "documents": "documents",
     "guardians": "guardians", "leaves": "leaves", "development": "development",
     "certificates": "certificates", "operations": "operations", "auditlog": "audit",
+    "taqreeb": "taqreeb",
 }
 
 SYSTEM_ROLES = {

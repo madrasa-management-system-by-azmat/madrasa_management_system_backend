@@ -22,6 +22,9 @@ class Certificate(models.Model):
         NAZERA = "nazera", "Nazera Quran"
         HIFZ = "hifz", "Hifz Quran"
         TARJAMA = "tarjama", "Translation Quran"
+        TAJWEED = "tajweed", "Tajweed & Qiraat"
+        ALIMIYYAH = "alimiyyah", "Alimiyyah"
+        ALIMIYYAH_FIRST = "alimiyyah_first", "Alimiyyah First (عالمیہ اول)"
         TRAINING = "training", "Training"
         REWARD = "reward", "Reward"
         MARKSHEET = "marksheet", "Marksheet"
@@ -80,8 +83,21 @@ class Certificate(models.Model):
 
     @classmethod
     def issue_serial(cls, madrasa, certificate_type):
-        prefix_map = {"graduation":"GRD","leaving":"LEV","nazera":"NAZ","hifz":"HFZ","tarjama":"TRJ","training":"TRN","reward":"RWD","marksheet":"MRK","manual":"MAN"}
-        prefix = prefix_map[certificate_type]
+        prefix_map = {
+            "graduation": "GRD",
+            "leaving": "LEV",
+            "nazera": "NAZ",
+            "hifz": "HFZ",
+            "tarjama": "TRJ",
+            "tajweed": "TJW",
+            "alimiyyah": "ALM",
+            "alimiyyah_first": "ALM1",
+            "training": "TRN",
+            "reward": "RWD",
+            "marksheet": "MRK",
+            "manual": "MAN",
+        }
+        prefix = prefix_map.get(certificate_type, "CRT")
         year = timezone.localdate().year
         with transaction.atomic():
             sequence, _ = CertificateNumberSequence.objects.select_for_update().get_or_create(madrasa=madrasa, year=year, prefix=prefix, defaults={"next_value": 1})

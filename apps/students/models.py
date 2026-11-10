@@ -449,6 +449,31 @@ class StudentAttendance(models.Model):
         return f"{self.student} — {self.date} ({self.status})"
 
 
+class StudentAttendanceScan(models.Model):
+    """Four immutable movement timestamps per student and institution-local day."""
+
+    madrasa = models.ForeignKey("users.Madrasa", on_delete=models.PROTECT, related_name="attendance_scans")
+    student = models.ForeignKey(Student, on_delete=models.PROTECT, related_name="attendance_scans")
+    date = models.DateField()
+    sequence = models.PositiveSmallIntegerField()
+    direction = models.CharField(max_length=5, choices=[("entry", "Entry"), ("exit", "Exit")])
+    scanned_at = models.DateTimeField()
+    request_id = models.UUIDField()
+    source = models.CharField(max_length=10, choices=[("scan", "Scan"), ("manual", "Manual")], default="scan")
+    reason = models.CharField(max_length=500, blank=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="recorded_attendance_scans")
+
+    class Meta:
+        ordering = ["-scanned_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["student", "date", "sequence"], name="unique_student_daily_scan_slot"),
+            models.UniqueConstraint(fields=["madrasa", "request_id"], name="unique_tenant_scan_request"),
+            models.CheckConstraint(check=models.Q(sequence__gte=1, sequence__lte=4), name="attendance_scan_four_slots"),
+            models.CheckConstraint(check=(models.Q(sequence__in=[1, 3], direction="entry") | models.Q(sequence__in=[2, 4], direction="exit")), name="attendance_scan_direction_matches"),
+        ]
+        indexes = [models.Index(fields=["madrasa", "date", "scanned_at"])]
+
+
 class AttendanceAlertRule(models.Model):
     madrasa = models.OneToOneField("users.Madrasa", on_delete=models.CASCADE, related_name="attendance_alert_rule")
     consecutive_absence_threshold = models.PositiveSmallIntegerField(default=3)

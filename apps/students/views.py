@@ -1,10 +1,13 @@
 from datetime import datetime, time, timedelta
 
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
-from rest_framework import filters, status, viewsets
+from rest_framework import filters, serializers, status, viewsets
+from rest_framework.exceptions import ValidationError
+from .attendance_daily import movement_register, movement_totals
+from .models import StudentAttendanceScan
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
@@ -117,11 +120,14 @@ class StudentViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         queryset = super().get_queryset()
         current_class = self.request.query_params.get("current_class")
         status = self.request.query_params.get("status")
+        gender = self.request.query_params.get("gender")
 
         if current_class:
             queryset = queryset.filter(current_class_id=current_class)
         if status:
             queryset = queryset.filter(status=status)
+        if gender:
+            queryset = queryset.filter(gender=gender)
 
         return queryset
 
@@ -568,6 +574,23 @@ class AlumniProfileViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
 
 @extend_schema(tags=["Students"])
 class StudentAttendanceViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
+    def get_permissions(self):
+        # These endpoints belong to attendance, not the broader students module.
+        self.required_permission = "attendance.view" if self.request.method in ("GET", "HEAD", "OPTIONS") else "attendance.manage"
+        return super().get_permissions()
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        if StudentAttendanceScan.objects.filter(student=instance.student, date=instance.date).exists():
+            if any(key in serializer.validated_data for key in ("student", "date")) or serializer.validated_data.get("status", instance.status) not in ("present", "late"):
+                raise ValidationError("Movement history exists: only present/late status and remarks may be updated.")
+        super().perform_update(serializer)
+
+    def perform_destroy(self, instance):
+        if StudentAttendanceScan.objects.filter(student=instance.student, date=instance.date).exists():
+            raise ValidationError("Daily attendance with recorded movements cannot be deleted.")
+        super().perform_destroy(instance)
+
     queryset = StudentAttendance.objects.select_related("student__current_class")
     serializer_class = StudentAttendanceSerializer
     filter_backends = [filters.OrderingFilter]
@@ -621,10 +644,29 @@ class StudentAttendanceViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
 
     @extend_schema(request=dict, responses={200: StudentAttendanceSerializer(many=True)})
     @action(detail=False, methods=["post"], url_path="bulk-save")
+    @transaction.atomic
     def bulk_save(self, request):
         records = request.data.get("records", [])
         if not isinstance(records, list) or not records:
             return Response({"detail": "At least one attendance record is required."}, status=status.HTTP_400_BAD_REQUEST)
+        class StatusInput(serializers.Serializer):
+            student = serializers.IntegerField(min_value=1)
+            date = serializers.DateField()
+            status = serializers.ChoiceField(choices=StudentAttendance.Status.choices)
+            remarks = serializers.CharField(max_length=255, required=False, allow_blank=True)
+        validator = StatusInput(data=records, many=True)
+        validator.is_valid(raise_exception=True)
+        records = validator.validated_data
+        tenant = self.get_madrasa()
+        ids = sorted({record["student"] for record in records})
+        # Same lock order as scanner/manual movements. Failures roll back the batch.
+        if Student.objects.filter(madrasa=tenant, pk__in=ids).update(status=F("status")) != len(ids):
+            raise ValidationError("Invalid student for this madrasa.")
+        for record in records:
+            if record["date"] > timezone.localdate():
+                raise ValidationError("Future attendance cannot be recorded.")
+            if record["status"] not in ("present", "late") and StudentAttendanceScan.objects.filter(madrasa=tenant, student_id=record["student"], date=record["date"]).exists():
+                raise ValidationError("Recorded entry/exit times require present or late daily status.")
         saved = []
         for record in records:
             student_id = record.get("student")
@@ -682,6 +724,9 @@ class StudentAttendanceViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         else:
             return Response({"detail": "period must be weekly, monthly, or yearly."}, status=status.HTTP_400_BAD_REQUEST)
         tenant = self.get_madrasa()
+        classroom = AcademicClass.objects.filter(madrasa=tenant, pk=academic_class).first()
+        if not classroom:
+            return Response({"detail": "Class not found."}, status=status.HTTP_404_NOT_FOUND)
         students = Student.objects.filter(madrasa=tenant, current_class_id=academic_class, status=Student.Status.ACTIVE).order_by("full_name")
         records = StudentAttendance.objects.filter(madrasa=tenant, student__in=students, date__range=(start, end)).values("student_id").annotate(
             present=Count("id", filter=Q(status=StudentAttendance.Status.PRESENT)),
@@ -698,7 +743,8 @@ class StudentAttendanceViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
             values = {key: item.get(key, 0) for key in ("present", "absent", "leave", "late", "sick", "outside")}
             marked = sum(values.values())
             rows.append({"student": student.id, "student_name": student.full_name, "registration_number": student.registration_number, **values, "marked_days": marked, "percentage": round((values["present"] / marked * 100) if marked else 0, 1)})
-        return Response({"period": period, "label": label, "date_from": start, "date_to": end, "class_name": AcademicClass.objects.get(madrasa=tenant, pk=academic_class).name, "students": rows, "totals": {key: sum(row[key] for row in rows) for key in ("present", "absent", "leave", "late", "sick", "outside")}})
+        movements, _ = movement_register(tenant, start, end, class_id=academic_class)
+        return Response({"period": period, "label": label, "date_from": start, "date_to": end, "class_name": classroom.name, "students": rows, "totals": {key: sum(row[key] for row in rows) for key in ("present", "absent", "leave", "late", "sick", "outside")}, "movements": movements, "movement_totals": movement_totals(movements), "timezone": timezone.get_current_timezone_name()})
 
 
 @extend_schema(tags=["Attendance Alerts"])

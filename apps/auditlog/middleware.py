@@ -1,6 +1,11 @@
 import uuid
+import logging
+
+from django.db import OperationalError
 
 from .context import reset_audit_request, set_audit_request
+
+logger = logging.getLogger(__name__)
 
 
 class AuditContextMiddleware:
@@ -17,7 +22,12 @@ class AuditContextMiddleware:
             user = getattr(request, "user", None)
             if request.path.startswith("/api/v1/") and user and user.is_authenticated:
                 from .services import audit_event
-                audit_event(category="access", action="request_completed", actor=user, metadata={"status_code": response.status_code})
+                try:
+                    audit_event(category="access", action="request_completed", actor=user, metadata={"status_code": response.status_code})
+                except OperationalError as error:
+                    # Access logging must never turn a successful read request
+                    # into a 500 response when SQLite is briefly write-locked.
+                    logger.warning("Skipped access audit event: %s", error)
             return response
         finally:
             reset_audit_request(token)

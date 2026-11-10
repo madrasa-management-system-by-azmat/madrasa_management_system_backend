@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "apps.backups",
     "apps.search",
     "apps.reports",
+    "apps.taqreeb",
 ]
 
 MIDDLEWARE = [

@@ -11,6 +11,7 @@ from apps.users.rbac import effective_permissions
 from apps.users.tenancy import current_madrasa
 
 REPORTS = [
+    {"key": "attendance-movements", "title": "چار اوقات حاضری رجسٹر", "description": "روزانہ دونوں آمد، دونوں روانگی اور مکمل دورانیہ", "permission": "attendance.view", "filters": ["date_from", "date_to", "class_id"]},
     {"key": "student-directory", "title": "طلبہ ڈائریکٹری", "description": "فعال طلبہ، جماعت، حلقہ اور رابطہ", "permission": "students.view", "filters": ["status", "class_id"]},
     {"key": "attendance-summary", "title": "حاضری خلاصہ", "description": "تاریخ وار حاضر، غیر حاضر، رخصت اور تناسب", "permission": "attendance.view", "filters": ["date_from", "date_to", "class_id"]},
     {"key": "exam-performance", "title": "امتحانی کارکردگی", "description": "امتحان وار طلبہ کے نمبر، نتیجہ اور اوسط", "permission": "exams.view", "filters": ["exam_id", "class_id"]},
@@ -51,6 +52,26 @@ class ReportGenerateAPIView(APIView):
         date_to = parse_date(request.query_params.get("date_to"), today)
         if date_from > date_to:
             return Response({"detail": "Start date must not be after end date."}, status=400)
+
+        if report_key == "attendance-movements":
+            from apps.students.attendance_daily import movement_register, movement_totals, SLOTS
+            rows, _ = movement_register(tenant, date_from, date_to, class_id=request.query_params.get("class_id"))
+            totals = movement_totals(rows)
+            for row in rows:
+                for slot in SLOTS:
+                    row[slot] = timezone.localtime(row[slot]).strftime("%H:%M:%S") if row[slot] else "—"
+                row["sources"] = ", ".join(f'{event["sequence"]}: {event["source"]}' for event in row["events"])
+            columns = [{"key": key, "label": label} for key, label in [
+                ("date", "تاریخ"), ("student_name", "طالب علم"), ("registration_number", "شناخت"),
+                ("status", "حیثیت"), ("entry_1", "آمد 1"), ("exit_1", "روانگی 1"),
+                ("entry_2", "آمد 2"), ("exit_2", "روانگی 2"), ("event_count", "اندراجات"),
+                ("completed_minutes", "مکمل جوڑوں کے منٹ"), ("sources", "ذریعہ"),
+            ]]
+            return Response(payload(definition, columns, rows, [
+                {"label": "کل اندراجات", "value": totals["events"]},
+                {"label": "مکمل دن", "value": totals["completed_days"]},
+                {"label": "نامکمل دن", "value": totals["incomplete_days"]},
+            ], {"date_from": date_from, "date_to": date_to, "timezone": timezone.get_current_timezone_name()}))
 
         if report_key == "student-directory":
             from apps.students.models import Student
