@@ -1,7 +1,29 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Certificate, CertificateEvent
+from .models import Certificate, CertificateEvent, CertificateTemplate
+
+
+class CertificateTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CertificateTemplate
+        fields = [
+            "id",
+            "code",
+            "title",
+            "arabic_title",
+            "subtitle",
+            "body_text_male",
+            "body_text_female",
+            "grade",
+            "dua",
+            "signatures",
+            "curriculum_books",
+            "is_default",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
 
 
 class CertificateEventSerializer(serializers.ModelSerializer):

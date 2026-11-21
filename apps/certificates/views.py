@@ -6,9 +6,26 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.users.tenancy import TenantScopedViewSetMixin
-from .models import Certificate, CertificateEvent, CertificateVerificationLog
-from .serializers import CertificateSerializer
+from .models import Certificate, CertificateEvent, CertificateTemplate, CertificateVerificationLog
+from .serializers import CertificateSerializer, CertificateTemplateSerializer
 from .services import sign_certificate, verify_signature
+
+
+class CertificateTemplateViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
+    queryset = CertificateTemplate.objects.all()
+    serializer_class = CertificateTemplateSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["title", "arabic_title", "code", "subtitle"]
+    ordering_fields = ["id", "title", "created_at"]
+
+    def get_queryset(self):
+        madrasa = self.get_madrasa()
+        CertificateTemplate.ensure_defaults_for_madrasa(madrasa)
+        return super().get_queryset()
+
+    def perform_create(self, serializer):
+        madrasa = self.get_madrasa()
+        serializer.save(madrasa=madrasa)
 
 
 class CertificateViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
@@ -22,10 +39,16 @@ class CertificateViewSet(TenantScopedViewSetMixin, viewsets.ModelViewSet):
         queryset = super().get_queryset()
         source_fingerprint = self.request.query_params.get("source_fingerprint")
         certificate_status = self.request.query_params.get("status")
+        certificate_type = self.request.query_params.get("certificate_type")
+        source_type = self.request.query_params.get("source_type")
         if source_fingerprint:
             queryset = queryset.filter(source_fingerprint=source_fingerprint)
         if certificate_status:
             queryset = queryset.filter(status=certificate_status)
+        if certificate_type:
+            queryset = queryset.filter(certificate_type=certificate_type)
+        if source_type:
+            queryset = queryset.filter(source_type=source_type)
         return queryset
 
     def perform_create(self, serializer):
